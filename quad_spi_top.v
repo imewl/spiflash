@@ -19,7 +19,7 @@
 //**********************************************************************
 
 module quad_spi_top (
-            // For AHB slave
+            // For register AHB slave
 			hclk_i
            ,hresetn_i
            ,hsel_i
@@ -33,26 +33,21 @@ module quad_spi_top (
            ,hrdata_o
            ,hready_o
            ,hresp_o
-			// For APB bus
-    		,pclk
-			,rst_n
-			,psel
-			,penable
-			,paddr
-			,pwrite
-			,pwdata 
-			,prdata 
-			,spi_i2s_int
+			// For Memory mapped AHB slave
+    		
 			// for DMA
 			,tx_fifo_space
 			,rx_fifo_fill
 			//out-side IO
-			,spi_clk_o
-			,spi_miso // bit[0] MOSI
+			,qspi_clk_o
+			,qspi_d_i
+			,qspi_d_o  
+			,qspi_d_oe
+			          // bit[0] MOSI
 			          // bit[1] MISO
 			          // bit[2] can be used as nWP
 			          // bit[3] can be used as nHOLD
-			,spi_cs_n
+			,qspi_cs_n_o
 			
         	);
 //--------------------------------------------------------
@@ -72,219 +67,189 @@ input   [31:0]	 hwdata_i;
 output  [31:0]	 hrdata_o;
 output			 hready_o;
 output  [1:0]	 hresp_o;
-// APB BUS signal
-input         	pclk;       // APB's clock 
-input         	rst_n;      // system reset
-input         	psel;
-input           penable;
-input [31:0]   	paddr;
-input         	pwrite;     // high for write, low for read
-input [31:0]  	pwdata;
-output[31:0]  	prdata;
-output [3:0]	tx_fifo_space;
-output [3:0]    rx_fifo_fill;
 
-output			spi_i2s_int;
+output [3:0]	 tx_fifo_space;
+output [3:0]     rx_fifo_fill;
+
+output           qspi_clk_o;
+input  [3:0]     qspi_d_i;
+output [3:0]     qspi_d_o;
+output [3:0]     qspi_d_oe;
+output           qspi_cs_n_o;
 
 //--------------------------------------------------------
 //Reg Wire define
 //--------------------------------------------------------
-/*
-wire			pclk;
-wire			rst_n;
-wire			psel;
-wire			penable;
-wire [31:0]		paddr;
-wire			pwrite;
-wire [31:0]		pwdata;
-wire			txeie, rxneie, errie, err_comm_ctrl;
+wire             qspi_val;
+wire [31:0]      qspi_addr_r_o;
+wire             qspi_rd;
+wire [3:0]       qspi_ben;
+wire [31:0]      qspi_wdata;
+wire [31:0]      qspi_rdata;
+wire             qspi_ack;
+wire             qspi_bsy;
+wire             qspi_indi_op_st;
+wire [7:0]       qspi_prescal;
+wire [7:0]       qspi_instruction;
+wire             qspi_clk;
+wire [1:0]       qspi_fmode;
+wire [1:0]       qspi_imode;
+wire [1:0]       qspi_admode;
+wire [1:0]       qspi_dmode;
+wire [1:0]       qspi_adsize;
+wire             rd_fifo_clr;
+wire             rd_fifo_wrreq;
+wire [7:0]       rd_fifo_dat;
+wire [31:0]      qspi_flash_addr;
+wire [31:0]      qspi_dlr;
+wire [31:0]      rd_fifo_q;
+wire             rd_fifo_rdreq;
+wire             rdfifo_empt;
+wire             wr_fifo_wrreq;
+wire [7:0]       wr_fifo_dat;
+wire             wr_fifo_rdreq;
+wire [7:0]       wr_fifo_q;
 
-wire            bidimode, spi_txrx, spe, mstr;
-wire			i2se, i2scfg, i2sms, pcmsync, ckpol, chlen, bsy, chside;
-wire [1:0]		i2sstd, datlen, txesel, rxesel;
-wire			mckoe, odd;
-wire [13:0]		i2sdiv;
-wire			tx_fifo_acq, rx_fifo_wr;
-wire [31:0]		tx_fifo_dat, rx_fifo_in;
-wire			tx_shift_empty, i2s_rx_enable,  i2s_clk_shft, i2s_clk_shft_inv;
+// AHB SLAVE INTERFACE
 
-wire            ovr, udr, rx_shft_upload, i2s_mck_out;
-wire            dr_wr;
-wire [31:0]     rx_fifo_out, tx_sta_reg, tx_d_reg;
-wire            csn_wsi_reg, tx_reg_hold, tx_reg_hold_reg, tx_reg_hold_rcv, tx_reg_hold_rcv_reg;
-wire            d_reg_flag, d_reg_flag_reg, d_reg_spi_rd, d_reg_spi_rd_reg;
-wire [3:0]      shft_state;
-wire [7:0]      cmd_shft;
-wire            tx_shft_first_load, tx_shft_load, rcv_cmd;
-wire [31:0]     tx_fifo_data_in;
-wire [5:0]      trans_cnt;
-wire [3:0]  tx_fifo_fill_rd;
-wire [3:0]  tx_fifo_fill;
-wire [3:0]  rx_fifo_fill_wr;
-	
-wire        	tx_shift_empty_reg, chside_reg;	
-*/
-quad_spi_apb_if  u_apb_if(// For APB bus
-    		/*.pclk(pclk), .rst_n(rst_n), .psel(psel), .penable(penable), 
-			.paddr(paddr[7:0]), .pwrite(pwrite), .pwdata(pwdata), .prdata(prdata),
-			// control reg
-			.msb_lsb(msb_lsb), .spe(spe),  .mstr(mstr), 
-			// interrupt reg
-			//.txeie(txeie), .rxneie(rxneie), .errie(errie), .txesel(txesel), .rxesel(rxesel),
-			// state reg
-			.tx_fifo_fill(tx_fifo_fill), .rx_fifo_fill(rx_fifo_fill), .bsy(bsy), .tx_shift_empty(tx_shift_empty_reg),
-			.ovr(ovr), .udr(udr), .chside(chside_reg), 
-			// config reg
-			.i2smod(i2smod), .i2se(i2se), .i2sms(i2sms), .i2scfg(i2scfg), .pcmsync(pcmsync), .i2sstd(i2sstd), 
-			.ckpol(ckpol), .datlen(datlen), .chlen(chlen), 
-			// predivider reg
-			.mckoe(mckoe), .odd(odd), .i2sdiv(i2sdiv),
-			// for tx fifo
-			.dr_wr(dr_wr), .tx_fifo_data_in(tx_fifo_data_in), 
-			// for rx fifo
-			.dr_rd(dr_rd), .rx_fifo_out(rx_fifo_out),
-			// for reg output
-            .csn_wsi(csn_wsi_reg), .tx_reg_hold(tx_reg_hold), .tx_reg_hold_rcv(tx_reg_hold_rcv_reg),
-			.d_reg_flag(d_reg_flag), .tx_d_reg(tx_d_reg), .d_reg_spi_rd(d_reg_spi_rd_reg),
-			// for int & err
-			.spi_i2s_int(spi_i2s_int), .err_comm_ctrl(err_comm_ctrl), .spi_out_int_i(spi_out_int_i), .spi_out_int_o(spi_out_int_o), .spi_out_int_oe(spi_out_int_oe)*/
-			);
-assign tx_fifo_space = 4'h8 - tx_fifo_fill;
-// TX FIFO
-/*
-spi_i2s_txfifo_8x32 tx_fifo   (
-	.rst_n(rst_n),
-	.size_select(2'b0),
-	// for write side
-    .clk_wr(pclk),
-	.write(dr_wr),
-	.mem_fill_wr(tx_fifo_fill),
-	.data_in(tx_fifo_data_in),
-	// for read side
-	.clk_rd(i2s_clk_shft_inv),
-	.read(tx_fifo_acq),
-	.data_out(tx_fifo_dat),
-	.mem_fill_rd(tx_fifo_fill_rd)
-    );
+qspi_clk_div    u_clk_div (
+                .ahb_rst_i                (hresetn_i      )
+               ,.ahb_clk_i                (hclk_i         )
+	           ,.qspi_prescal_i           (qspi_prescal   )
+	           ,.qspi_busy_i              (qspi_bsy       )
+	           ,.qspi_clk_o               (qspi_clk       )
+                );
 
-// RX FIFO
-spi_i2s_rxfifo_8x32 rx_fifo   (
-	.rst_n(rst_n),
-	.size_select(2'b0),
-	// for write side
-    .clk_wr(i2s_clk_shft),
-	.write(rx_fifo_wr),
-	.mem_fill_wr(rx_fifo_fill_wr),
-	.data_in({rx_fifo_in[30:0], sdi}),
-	// for read side
-	.clk_rd(pclk),
-	.read(dr_rd),
-	.data_out(rx_fifo_out),
-	.mem_fill_rd(rx_fifo_fill)
-    );			
-	
-spi_i2s_comm_ctrl u_comm_ctrl (
-			.pclk(pclk), .rst_n(rst_n),
-			.i2smod(i2smod), .i2se(i2se), .i2sms(i2sms),
-			.i2sstd(i2sstd), .i2scfg(i2scfg), .datlen(datlen), .pcmsync(pcmsync), .chlen(chlen), 
-			.mstr(mstr),
-			.tx_fifo_fill(tx_fifo_fill), .tx_shift_empty(tx_shift_empty_reg), .bsy(bsy),
-			.rx_shft_upload(rx_shft_upload), .i2s_rx_enable(i2s_rx_enable), .err_comm_ctrl(err_comm_ctrl),
-			.sdoe(sdoe), .csn_ws_oe(csn_ws_oe), .sckoe(sckoe), .miso_oe(miso_oe), .mosi_oe(mosi_oe)
-			);
+qspi_ahb_slave_itf u_ahb_if(
+                 .hclk_i          (hclk_i         )
+                ,.hresetn_i       (hresetn_i      )
+                ,.haddr_i         (haddr_i        )
+                ,.htrans_i        (htrans_i       )
+                ,.hwdata_i        (hwdata_i       )
+                ,.hwrite_i        (hwrite_i       )
+                ,.hsize_i         (hsize_i        )
+                ,.hburst_i        (hburst_i       )
+                ,.hsel_i          (hsel_i         )
+                ,.hready_i        (1'b1           )
+                ,.qspi_hready_o   (hready_o       )
+                ,.qspi_hresp_o    (hresp_o        )
+                ,.qspi_hrdata_o   (hrdata_o       )
+                ,.qspi_select_o   ()            
+                ,.qspi_val_r_o    (qspi_val       )
+                ,.qspi_addr_r_o   (qspi_addr_r_o  )
+                ,.qspi_rd_r_o     (qspi_rd        )
+                ,.qspi_ben_r_o    (qspi_ben       )
+                ,.qspi_wdata_o    (qspi_wdata     )
+                ,.qspi_rdata_i    (qspi_rdata     )
+                ,.qspi_ack_i      (qspi_ack       )
 
-spi_i2s_shft_ctrl	u_shft (.sdi(sdi),  .ckpol(ckpol), 
-			// SPI config 
-			//.bidimode(bidimode), .spi_txrx(spi_txrx), 
-			.spe(spe), .mstr(mstr),  // static signal across clock domains, chould not be multi-sampled. 
-			.tx_sta_reg(tx_sta_reg), 
-			.mosi_s(mosi_s),
-			// for spi reg output
-			
-			.i2smod(i2smod), .i2se(i2se), .i2sms(i2sms),// static signal across clock domains, chould not be multi-sampled. 
-			.i2sstd(i2sstd), .i2scfg(i2scfg), .datlen(datlen), .pcmsync(pcmsync), .chlen(chlen), 
-			.i2s_clk_shft(i2s_clk_shft), .rst_n(rst_n_shft),
-			.tx_fifo_fill(tx_fifo_fill_rd),
-			.tx_shift_empty(tx_shift_empty), .tx_fifo_acq(tx_fifo_acq),
-			.rx_shft_upload(rx_shft_upload), .i2s_rx_enable(i2s_rx_enable),
-			.rx_shft(rx_fifo_in), .chside(chside), .wso(csn_wso), .rx_fifo_wr(rx_fifo_wr),
-			
-			// for TX and RX shifter
-			.shft_state(shft_state), .tx_shft_first_load(tx_shft_first_load), .tx_shft_load(tx_shft_load), .rcv_cmd(rcv_cmd), .cmd_shft(cmd_shft),
-			.trans_cnt(trans_cnt)
-			);
-			
-spi_i2s_tx     u_tx_shft (
-			.rst_n(rst_n_shft), .i2s_clk_shft_tx(i2s_clk_shft_inv), 
-			// from shifter controller
-			.shft_state(shft_state), .tx_shft_first_load(tx_shft_first_load), .tx_shft_load(tx_shft_load), .rcv_cmd(rcv_cmd), .cmd_shft(cmd_shft), 
-			.trans_cnt(trans_cnt), // from shifter controller, using i2s_clk_shft
-			// With FIFO
-			.tx_fifo_dat(tx_fifo_dat),  .tx_fifo_fill_rd(tx_fifo_fill_rd), .rx_fifo_fill_wr(rx_fifo_fill_wr),
-			// With APB interface
-			.tx_reg_hold(tx_reg_hold_reg), .tx_reg_hold_rcv(tx_reg_hold_rcv), .d_reg_flag(d_reg_flag_reg), .tx_d_reg(tx_d_reg),	.d_reg_spi_rd(d_reg_spi_rd),
-			.msb_lsb(msb_lsb_reg),
-			//output ports
-			.sdo(sdo), .miso_s(miso_s)
-			);
-spi_i2s_clk_gene u_clk_gen (.pclk(pclk), .rst_n(rst_n), .scki(scki),
-					//module reg 
-				.i2se(i2se), .bsy(bsy), .chlen(chlen), .mckoe(mckoe), .odd(odd), .i2sdiv(i2sdiv),  
-				.i2sms(i2sms), .ckpol(ckpol),
-					// clock out
-				.i2s_clk_out(scko), .i2s_mck_out(i2s_mck_out), 
-				.i2s_clk_shft(i2s_clk_shft), .i2s_clk_shft_inv(i2s_clk_shft_inv), 
-				.csn_wsi(csn_wsi), .rst_n_shft(rst_n_shft)
+                ,.qspi_bsy_i      (qspi_bsy       )
 				);
+				
+qspi_ctrl_reg    u_ctrl_reg (
+                 .ahb_rst_i               (hresetn_i    ) 
+                ,.ahb_clk_i               (hclk_i       )
+				,.qspi_val_i              (qspi_val     )
+                ,.qspi_addr_i             (qspi_addr_r_o)
+                ,.qspi_rd_i               (qspi_rd      )
+                ,.qspi_ben_i              (qspi_ben     )
+                ,.qspi_wdata_i            (qspi_wdata   )
+                ,.qspi_rdata_o            (qspi_rdata   )
+				,.qspi_ack_o              (qspi_ack     )
+				,.qspi_busy_i             (qspi_bsy     )
+				,.qspi_indi_op_st_o       (qspi_indi_op_st)
+				
+				,.qspi_prescal_o          (qspi_prescal)
+				,.qspi_dlr_o              (qspi_dlr    )
+				,.qspi_fmode_o            (qspi_fmode  )
+				,.qspi_dmode_o            (qspi_dmode  )
+				,.qspi_adsize_o           (qspi_adsize )
+				,.qspi_admode_o           (qspi_admode)
+				,.qspi_imode_o            (qspi_imode)
+				,.qspi_instruction_o      (qspi_instruction)
+				,.qspi_address_o          (qspi_flash_addr)
+				
+				,.wr_fifo_clr_o           (wr_fifo_clr)
+				,.wr_fifo_wrreq_o         (wr_fifo_wrreq)
+				,.wr_fifo_dat_o           (wr_fifo_dat)
+				,.wr_fifo_full_i          (wrfifo_full    )
+				
+				,.rd_fifo_rdreq_o (rd_fifo_rdreq  )
+				,.rdfifo_rdata_i  (rd_fifo_q      )
+				,.rdfifo_empt_i   (rdfifo_empt    )
+				
+				,.qspi_cs_n_i     (qspi_cs_n_o    )
+				
+				
+                );
+ffdc_128x8     u_wr_dat_fifo(
+                // write-side
+                 .wrclk                   (hclk_i          )
+                ,.wrreq                   (wr_fifo_wrreq)
+                ,.data                    (wr_fifo_dat)
+                ,.wrfull                  (wrfifo_full)
+                ,.wrempty                 ()
+                ,.wrusedw                 ()
+                // read-side
+                ,.rdclk                   (qspi_clk)
+                ,.rdreq                   (wr_fifo_rdreq)
+                ,.q                       (wr_fifo_q)
+                ,.rdfull                  ()
+                ,.rdempty                 ()
+                ,.rdusedw                 ()
+                // asynchronous and write-side reset for all modules
+                ,.aclr_wr                 (wr_fifo_clr)
+                ,.aclr_rd                 (hresetn_i)
+                ,.wrrst                   (hresetn_i)
+                );
+				
+ffdc_128x8     u_rd_dat_fifo(
+                // write-side
+                 .wrclk                   (qspi_clk       )
+                ,.wrreq                   (rd_fifo_wrreq)
+                ,.data                    (rd_fifo_dat)
+                ,.wrfull                  ()
+                ,.wrempty                 ()
+                ,.wrusedw                 ()
+                // read-side
+                ,.rdclk                   (hclk_i)
+                ,.rdreq                   (rd_fifo_rdreq)
+                ,.q                       (rd_fifo_q)
+                ,.rdfull                  ()
+                ,.rdempty                 (rdfifo_empt)
+                ,.rdusedw                 ()
+                // asynchronous and write-side reset for all modules
+                ,.aclr_wr                 (hresetn_i)
+                ,.aclr_rd                 (rd_fifo_clr)
+                ,.wrrst                   (hresetn_i)
+                );
 
-assign	mck = pclk;
-
-spi_sync_a2b u_sync_a2b_0 (
-					 .rst_n(rst_n)
-					,.clk_b(pclk)
-					,.dat_a(csn_wsi)
-					,.dat_b(csn_wsi_reg));
-					
-spi_sync_a2b u_sync_a2b_1 (
-					 .rst_n(rst_n) 
-					,.clk_b(i2s_clk_shft_inv) 
-					,.dat_a(tx_reg_hold) 
-					,.dat_b(tx_reg_hold_reg));
-					
-spi_sync_a2b u_sync_a2b_2 (
-					 .rst_n(rst_n) 
-					,.clk_b(pclk) 
-					,.dat_a(tx_reg_hold_rcv) 
-					,.dat_b(tx_reg_hold_rcv_reg));
-					
-spi_sync_a2b u_sync_a2b_3 (
-					 .rst_n(rst_n) 
-					,.clk_b(i2s_clk_shft_inv) 
-					,.dat_a(d_reg_flag) 
-					,.dat_b(d_reg_flag_reg));
-
-spi_sync_a2b u_sync_a2b_4 (
-					 .rst_n(rst_n) 
-					,.clk_b(pclk) 
-					,.dat_a(d_reg_spi_rd) 
-					,.dat_b(d_reg_spi_rd_reg));	
-					
-spi_sync_a2b u_sync_a2b_5 (
-					 .rst_n(rst_n) 
-					,.clk_b(pclk) 
-					,.dat_a(tx_shift_empty) 
-					,.dat_b(tx_shift_empty_reg));	
-					
-spi_sync_a2b u_sync_a2b_6 (
-					 .rst_n(rst_n) 
-					,.clk_b(pclk) 
-					,.dat_a(chside) 
-					,.dat_b(chside_reg));		
-
-spi_sync_a2b u_sync_a2b_7 (
-					 .rst_n(rst_n) 
-					,.clk_b(i2s_clk_shft_inv) 
-					,.dat_a(msb_lsb) 
-					,.dat_b(msb_lsb_reg));					
-*/
+qspi_shifter     u_qspi_shifter (
+                 .rst_n_i                 (hresetn_i)
+				,.qspi_clk_i              (qspi_clk)
+				,.qspi_indi_op_st_i       (qspi_indi_op_st )
+				,.qspi_fmode_i            (qspi_fmode      )
+				,.qspi_admode_i           (qspi_admode     )
+				,.qspi_imode_i            (qspi_imode      )
+				,.qspi_dmode_i            (qspi_dmode      )
+				,.qspi_instruction_i      (qspi_instruction)
+				,.qspi_flash_addr_i       (qspi_flash_addr )
+				,.qspi_adsize_i           (qspi_adsize     )
+				,.qspi_dlr_i              (qspi_dlr        )
+				
+				,.qspi_bsy_o              (qspi_bsy   )
+				,.qspi_clk_o              (qspi_clk_o )
+				,.qspi_cs_n_o             (qspi_cs_n_o)
+				,.qspi_d_o                (qspi_d_o   )
+				,.qspi_d_i                (qspi_d_i   )
+				,.qspi_d_oe               (qspi_d_oe  )
+				
+				,.rd_fifo_clr_o           (rd_fifo_clr     )
+				,.rd_fifo_wrreq_o         (rd_fifo_wrreq   )
+				,.rd_fifo_dat_o           (rd_fifo_dat     )
+				
+				,.wr_fifo_rdreq_o         (wr_fifo_rdreq   )
+				,.wr_fifo_dat_i           (wr_fifo_q       )
+                );				
+				
 endmodule
